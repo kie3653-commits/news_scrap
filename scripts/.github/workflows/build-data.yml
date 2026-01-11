@@ -1,0 +1,37 @@
+name: Build FSA Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "YYYY-MM-DD"
+        required: true
+        default: "2026-01-09"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install requests beautifulsoup4
+
+      - name: Build data json
+        run: |
+          mkdir -p data
+          python scripts/fsa_fetch.py "${{ github.event.inputs.date }}" > "data/${{ github.event.inputs.date }}.json"
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data
+          git commit -m "Add data for ${{ github.event.inputs.date }}" || echo "No changes"
+          git push
