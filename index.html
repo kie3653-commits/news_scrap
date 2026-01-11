@@ -3,72 +3,108 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>뉴스 스크랩</title>
+  <title>FSA Scraper</title>
   <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial;
-      margin: 24px;
-      line-height: 1.5;
-    }
-    h1 {
-      font-size: 22px;
-      margin-bottom: 6px;
-    }
-    .date {
-      color: #666;
-      font-size: 14px;
-      margin-bottom: 20px;
-    }
-    h2 {
-      margin-top: 28px;
-      font-size: 18px;
-    }
-    ul {
-      padding-left: 18px;
-    }
-    li {
-      margin: 8px 0;
-    }
-    a {
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 24px; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    input { padding:10px 12px; font-size:14px; width: 160px; }
+    button { padding:10px 14px; font-size:14px; cursor:pointer; }
+    .card { margin-top:18px; border:1px solid #e5e5e5; border-radius:12px; padding:16px; }
+    table { width:100%; border-collapse: collapse; margin-top:12px; }
+    th, td { border-bottom: 1px solid #eee; padding: 10px; vertical-align: top; }
+    th { text-align:left; font-size: 13px; color:#555; }
+    td { font-size: 14px; }
+    .muted { color:#777; font-size: 13px; }
+    a { text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; background:#f2f2f2; font-size:12px; }
   </style>
 </head>
 <body>
+  <h1>FSA 링크 자동 정리</h1>
+  <div class="muted">날짜 입력 → 실행 → FSA 해당 날짜 항목을 테이블로 표시</div>
 
-  <h1>오늘의 뉴스 스크랩</h1>
-  <div class="date">기준 날짜: 2026-01-09</div>
+  <div class="card">
+    <div class="row">
+      <div class="pill">일본</div>
+      <label class="muted">날짜</label>
+      <input id="date" type="date" />
+      <button id="run">실행하기</button>
+      <div id="status" class="muted"></div>
+    </div>
 
-  <h2>🇯🇵 금융청(FSA)</h2>
-  <ul>
-    <li>
-      <a href="https://www.fsa.go.jp/news/20260109/01.html" target="_blank">
-        (예시) ○○에 관한 보도자료
-      </a>
-    </li>
-    <li>
-      <a href="https://www.fsa.go.jp/news/20260109/02.html" target="_blank">
-        (예시) △△ 관련 공지
-      </a>
-    </li>
-  </ul>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:120px;">분류</th>
+          <th>관련 내용_일본어</th>
+          <th>관련 내용_한국어</th>
+          <th style="width:120px;">링크</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="4" class="muted">날짜를 선택하고 실행을 눌러주세요.</td></tr>
+      </tbody>
+    </table>
+  </div>
 
-  <h2>🌍 기타 참고 링크</h2>
-  <ul>
-    <li>
-      <a href="https://www.sec.gov/news/pressreleases" target="_blank">
-        SEC Press Releases
-      </a>
-    </li>
-    <li>
-      <a href="https://www.mas.gov.sg/news/media-releases" target="_blank">
-        MAS Media Releases
-      </a>
-    </li>
-  </ul>
+<script>
+  const tbody = document.getElementById("tbody");
+  const statusEl = document.getElementById("status");
 
+  // 기본값: 오늘
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth()+1).padStart(2,"0");
+  const dd = String(today.getDate()).padStart(2,"0");
+  document.getElementById("date").value = `${yyyy}-${mm}-${dd}`;
+
+  function escapeHtml(s){
+    return s.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+  }
+
+  async function loadData(dateStr){
+    // GitHub Actions가 생성해 둘 data 파일을 날짜별로 읽는 방식
+    // 예: data/2026-01-09.json
+    const url = `data/${dateStr}.json`;
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(`데이터 없음: ${url}`);
+    return await r.json();
+  }
+
+  function renderRows(items){
+    if (!items.length){
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">해당 날짜 항목이 없습니다.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = items.map(it => {
+      const jp = escapeHtml(it.title_ja || "");
+      const ko = escapeHtml(it.title_ko || "(번역 대기)");
+      const link = it.url || "#";
+      return `
+        <tr>
+          <td>FSA</td>
+          <td>${jp}</td>
+          <td>${ko}</td>
+          <td><a href="${link}" target="_blank" rel="noopener noreferrer">열기</a></td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("run").addEventListener("click", async () => {
+    const dateStr = document.getElementById("date").value;
+    statusEl.textContent = "불러오는 중...";
+    tbody.innerHTML = `<tr><td colspan="4" class="muted">로딩중...</td></tr>`;
+    try {
+      const data = await loadData(dateStr);
+      renderRows(data.items || []);
+      statusEl.textContent = `완료: ${data.items?.length ?? 0}건`;
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">데이터가 아직 없어요. (GitHub Actions가 ${dateStr} 데이터를 생성해야 함)</td></tr>`;
+      statusEl.textContent = "실패";
+    }
+  });
+</script>
 </body>
 </html>
